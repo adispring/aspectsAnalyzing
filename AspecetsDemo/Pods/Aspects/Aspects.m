@@ -172,6 +172,7 @@ static NSMethodSignature *aspect_blockMethodSignature(id block, NSError **error)
         AspectError(AspectErrorMissingBlockSignature, description);
         return nil;
     }
+    // 直接对descriptor进行结构体成员变量内存偏移量查询！！！
 	void *desc = layout->descriptor;
 	desc += 2 * sizeof(unsigned long int);
 	if (layout->flags & AspectBlockFlagsHasCopyDisposeHelpers) {
@@ -235,6 +236,8 @@ static BOOL aspect_isMsgForwardIMP(IMP impl) {
     ;
 }
 
+// http://blog.cnbang.net/tech/2855/
+// 先说下 _objc_msgForward，在上一篇提到为了让替换的方法走 forwardInvocation，把它指向一个不存在的 IMP: class_getMethodImplementation(cls, @selector(__JPNONImplementSelector))，实际上这样实现是多余的，若 class_getMethodImplementation 找不到 class / selector 对应的 IMP，会返回 _objc_msgForward 这个 IMP，所以更直接的方式是把要替换的方法都指向 _objc_msgForward，省去查找方法的时间
 static IMP aspect_getMsgForwardIMP(NSObject *self, SEL selector) {
     IMP msgForwardIMP = _objc_msgForward;
 #if !defined(__arm64__)
@@ -384,6 +387,7 @@ static NSString *const AspectsForwardInvocationSelectorName = @"__aspects_forwar
 static void aspect_swizzleForwardInvocation(Class klass) {
     NSCParameterAssert(klass);
     // If there is no method, replace will act like class_addMethod.
+    // 如果被hook的类中之前实现了forwardInvocation:，则进行method swizzle（方法的实现互换），如果之前没有实现forwardInvocation:，则只是添加__ASPECTS_ARE_BEING_CALLED__
     IMP originalImplementation = class_replaceMethod(klass, @selector(forwardInvocation:), (IMP)__ASPECTS_ARE_BEING_CALLED__, "v@:@");
     if (originalImplementation) {
         class_addMethod(klass, NSSelectorFromString(AspectsForwardInvocationSelectorName), originalImplementation, "v@:@");
@@ -560,6 +564,7 @@ static NSMutableDictionary *aspect_getSwizzledClassesDict() {
 }
 
 static BOOL aspect_isSelectorAllowedAndTrack(NSObject *self, SEL selector, AspectOptions options, NSError **error) {
+    // 不允许被hook的黑名单，😧
     static NSSet *disallowedSelectorList;
     static dispatch_once_t pred;
     dispatch_once(&pred, ^{
@@ -636,9 +641,9 @@ static void aspect_deregisterTrackedSelector(id self, SEL selector) {
 
     NSMutableDictionary *swizzledClassesDict = aspect_getSwizzledClassesDict();
     NSString *selectorName = NSStringFromSelector(selector);
-    Class currentClass = [self class];
+    Class currentClass = [self class]; // 获取hook之前的类
     do {
-        AspectTracker *tracker = swizzledClassesDict[currentClass];
+        AspectTracker *tracker = swizzledClassesDict[currentClass]; // swizzledClassesDict中含有被hook的类，类名为key，value为AspectTracker，该类中含有被hook的selector。首先从tracker.selectorNames中删除要被删除的selector，若tracker.selectorNames为空，则将tracker.selectorNames页删除。
         if (tracker) {
             [tracker.selectorNames removeObject:selectorName];
             if (tracker.selectorNames.count == 0) {
