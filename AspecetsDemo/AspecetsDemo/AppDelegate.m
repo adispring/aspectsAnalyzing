@@ -9,6 +9,8 @@
 #import "AppDelegate.h"
 #import "ViewController.h"
 #import <Aspects.h>
+#import "Dog.h"
+#import "Target.h"
 
 @interface AppDelegate ()
 
@@ -23,6 +25,33 @@
     self.window.backgroundColor = [UIColor whiteColor];
     self.window.rootViewController = [[UINavigationController alloc] initWithRootViewController:aspectsController];
     [self.window makeKeyAndVisible];
+    
+    Target *aTarget = [[Target alloc] init];
+    [aTarget aspect_hookSelector:NSSelectorFromString(@"targetSelector")
+                     withOptions:AspectPositionBefore
+                      usingBlock:^(id<AspectInfo> aspectInfo) {
+        NSLog(@"Hook targetSelector");
+    }
+                           error:NULL];
+    [aTarget targetSelector];
+     
+    [Dog aspect_hookSelector:@selector(classMethod) withOptions:AspectPositionBefore usingBlock:^(id<AspectInfo> aspectInfo) {
+        NSLog(@"Dog will do Class Method!");
+    }error:NULL];
+    [Dog classMethod];
+    
+    [Dog aspect_hookSelector:@selector(eat:) withOptions:AspectPositionBefore usingBlock:^(id<AspectInfo> aspectInfo, NSString *food) {
+        NSLog(@"Dog will eat: %@", food);
+    }error:NULL];
+    
+    Dog *haskell = [[Dog alloc] init];
+    [haskell aspect_hookSelector:NSSelectorFromString(@"bark") withOptions:AspectPositionAfter usingBlock:^(id<AspectInfo> aspectInfo) {
+        NSLog(@"After Dog barked!");
+    }error:NULL];
+    
+    [Dog classMethod];
+    [haskell eat:@"fish"];
+    [haskell bark];
     
     [UIViewController aspect_hookSelector:@selector(viewWillAppear:) withOptions:AspectPositionAfter usingBlock:^(id<AspectInfo> aspectInfo, BOOL animated) {
         NSLog(@"View Controller %@ will appear animated: %tu", aspectInfo.instance, animated);
